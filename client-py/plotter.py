@@ -26,6 +26,7 @@ import curses
 #custom curses_pad.
 import curses_pad as cp
 
+import time
 
 class BasePlot(object):
   """Base class / interface definition for telemetry plotter plots with a
@@ -331,14 +332,28 @@ if __name__ == "__main__":
     plot_updated = False
     global stdscr #get the global curses instance.
 
-    #print("UPDATE \r")
-
     while True:
       packet = telemetry.next_rx_packet()
       if not packet:
         break
 
       if isinstance(packet, HeaderPacket):
+        #print("HEADER PACKET \n\r")
+        #print( str(packet) + "\n\r" )
+        #print(type(packet))
+        #print('\n\r')
+        #print(dir(packet))
+        #print('\n\r')
+
+        #print("HEADER.data \n\r")
+        #print(packet.data)
+        #print(type(packet.data))
+        #print(dir(packet.data))
+
+        #for key in packet.data.keys():
+        #  print("key: " + str(key) + " value: " + str(packet.data[key]) + "\n\r")
+        #  print(type(packet.data[key]))
+        #  print(dir(packet.data[key]))
         fig.clf()
 
         # get independent variable data ID
