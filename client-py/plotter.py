@@ -407,8 +407,9 @@ if __name__ == "__main__":
 
   def on_exit(event):
       print("Figured closed, exiting.")
+      #close down serial so i can open it up again on next run cleanly
+      telemetry.serial.close()
       sys.exit()
-
 
 
   def setup(stdscr_instance):
