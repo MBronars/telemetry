@@ -223,11 +223,38 @@ class CsvLogger(object):
     display_name_dict = {}
     units_dict = {}
 
+    #more dicts, to cover every possible datafield
+    subtype_dict = {}
+    length_dict = {}
+    limits_dict = {}
+    count_dict = {}
+
     for _, data_def in sorted(header_packet.get_data_defs().items()):
       csv_header.append(data_def.data_id)
       internal_name_dict[data_def.data_id] = data_def.internal_name
       display_name_dict[data_def.data_id] = data_def.display_name
       units_dict[data_def.data_id] = data_def.units
+
+      if hasattr(data_def, 'subtype'):
+        subtype_dict[data_def.data_id] = data_def.subtype
+      else:
+        subtype_dict[data_def.data_id] = ""
+
+      if hasattr(data_def, 'length'):
+        length_dict[data_def.data_id] = data_def.length
+      else:
+        length_dict[data_def.data_id] = ""
+
+      if hasattr(data_def, 'limits'):
+        limits_dict[data_def.data_id] = data_def.limits
+      else:
+        limits_dict[data_def.data_id] = ""      
+
+      if hasattr(data_def, 'count'):
+        count_dict[data_def.data_id] = data_def.count
+      else:
+        count_dict[data_def.data_id] = ""
+
     csv_header.append("data")  # for non-telemetry data
 
     if sys.version_info.major < 3:
@@ -239,6 +266,10 @@ class CsvLogger(object):
     self.csv_writer.writerow(internal_name_dict)
     self.csv_writer.writerow(display_name_dict)
     self.csv_writer.writerow(units_dict)
+    self.csv_writer.writerow(subtype_dict)
+    self.csv_writer.writerow(length_dict)
+    self.csv_writer.writerow(limits_dict)
+    self.csv_writer.writerow(count_dict)
 
     self.pending_data = ""
 
