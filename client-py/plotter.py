@@ -304,6 +304,8 @@ if __name__ == "__main__":
                       help='independent variable axis span')
   parser.add_argument('--log_filename_prefix', '-f', default='telemetry',
                       help='filename prefix for logging output, set to empty to disable logging')
+  parser.add_argument('--playback_log' ,'-p', default='',
+                      help='filename to playback a telemetry log.  Set to an extant file to playback a log file')
   args = parser.parse_args()
 
 
@@ -354,7 +356,9 @@ if __name__ == "__main__":
         filename = '%s-%s.csv' %  (args.log_filename_prefix, timestring)
         if csv_logger[0] is not None:
           csv_logger[0].finish()
-        if args.log_filename_prefix:
+        if (not args.playback_log) and args.log_filename_prefix:
+          #if there is NOT a playback log, and there is a filename prefix, enable csv logging.
+          #anything else will disable csv logging
           csv_logger[0] = CsvLogger(filename, packet)
 
       elif isinstance(packet, DataPacket):
