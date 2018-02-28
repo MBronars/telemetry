@@ -1,6 +1,9 @@
 from __future__ import print_function
 from builtins import input
 
+import matplotlib
+matplotlib.use('tkAgg')
+
 import ast
 from collections import deque
 import csv
@@ -264,8 +267,8 @@ class CsvLogger(object):
 if __name__ == "__main__":
   import argparse
   parser = argparse.ArgumentParser(description='Telemetry data plotter.')
-  parser.add_argument('port', help='serial port to receive on')
-  parser.add_argument('--baud', '-b', type=int, default=38400,
+  parser.add_argument('--port', help='serial port to receive on', default='/dev/tty.usbmodem1412')
+  parser.add_argument('--baud', '-b', type=int, default=115200,
                       help='serial baud rate')
   parser.add_argument('--indep_name', '-i', default='time',
                       help='internal name of independent axis')
@@ -305,6 +308,7 @@ if __name__ == "__main__":
       if not packet:
         break
 
+      #import pdb; pdb.set_trace()
       if isinstance(packet, HeaderPacket):
         fig.clf()
 
@@ -424,7 +428,6 @@ if __name__ == "__main__":
     plt.pause(0.0001)
 
     cp.init(stdscr_instance) #init's, and then runs, curses.
-
     while True:
       update()
       cp.user_input()     
@@ -434,7 +437,6 @@ if __name__ == "__main__":
       if cp.line_to_send is not None:
         telemetry.serial.write(cp.line_to_send + "\n\r")
         cp.line_to_send = None
-
 
 
 
