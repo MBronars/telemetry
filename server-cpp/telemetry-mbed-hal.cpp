@@ -43,11 +43,6 @@ void MbedHal::do_error(const char* msg) {
     serial->puts("\r\n");
   }
 }
-
-uint32_t MbedHal::get_time_ms() {
-  return timer.read_ms();
-}
-
 }
 
 #endif

@@ -22,9 +22,6 @@ const size_t MAX_DATA_PER_TELEMETRY = TELEMETRY_DATA_LIMIT;
 // Maximum payload size for a received telemetry packet.
 const size_t MAX_RECEIVE_PACKET_LENGTH = 255;
 
-// Time after which a partially received packet is discarded.
-const uint32_t DECODER_TIMEOUT_MS = 100;
-
 // Buffer size for received non-telemetry data.
 const size_t SERIAL_RX_BUFFER_SIZE = TELEMETRY_SERIAL_RX_BUFFER_SIZE;
 }
@@ -42,6 +39,14 @@ const size_t SERIAL_RX_BUFFER_SIZE = TELEMETRY_SERIAL_RX_BUFFER_SIZE;
   #endif
   #include "telemetry-mbed-hal.h"
 #endif
+
+#if defined(TELEMETRY_USE_SOCKETS)
+  #ifdef TELEMETRY_HAL
+    #error "Multiple telemetry HALs defined"
+  #endif
+  #include "telemetry-sockets-hal.h"
+#endif
+
 
 #ifndef TELEMETRY_HAL
   #error "No telemetry HAL defined"
@@ -98,9 +103,7 @@ public:
     decoder_state(SOF),
     decoder_pos(0),
     packet_length(0),
-	  decoder_last_received(false),
-	  decoder_last_receive_ms(0),
-    header_transmitted(false),
+	  in_config(false),
     packet_tx_sequence(0),
     packet_rx_sequence(0) {};
 
@@ -164,12 +167,10 @@ protected:
 
   size_t decoder_pos;
   size_t packet_length;
-  bool decoder_last_received;
-  uint32_t decoder_last_receive_ms;
 
   Queue<uint8_t, SERIAL_RX_BUFFER_SIZE> rx_buffer;
 
-  bool header_transmitted;
+  bool in_config;
 
   // Sequence number of the next packet to be transmitted.
   uint8_t packet_tx_sequence;

@@ -16,8 +16,8 @@ size_t Telemetry::add_data(Data& new_data) {
     do_error("MAX_DATA_PER_TELEMETRY limit reached.");
     return 0;
   }
-  if (header_transmitted) {
-    do_error("Cannot add new data after header transmitted.");
+  if (in_config) {
+    do_error("Cannot add new data after data transmission.");
     return 0;
   }
   data[data_count] = &new_data;
@@ -31,10 +31,7 @@ void Telemetry::mark_data_updated(size_t data_id) {
 }
 
 void Telemetry::transmit_header() {
-  if (header_transmitted) {
-    do_error("Cannot retransmit header.");
-    return;
-  }
+  in_config = false;
 
   size_t packet_legnth = 2; // opcode + sequence
   for (size_t data_idx = 0; data_idx < data_count; data_idx++) {
@@ -59,7 +56,6 @@ void Telemetry::transmit_header() {
   packet.finish();
 
   packet_tx_sequence++;
-  header_transmitted = true;
 }
 
 void Telemetry::do_io() {
@@ -68,11 +64,6 @@ void Telemetry::do_io() {
 }
 
 void Telemetry::transmit_data() {
-  if (!header_transmitted) {
-    do_error("Must transmit header before transmitting data.");
-    return;
-  }
-
   // Keep a local copy to make it more thread-safe
   bool data_updated_local[MAX_DATA_PER_TELEMETRY];
 
@@ -105,25 +96,7 @@ void Telemetry::transmit_data() {
 }
 
 void Telemetry::process_received_data() {
-  uint32_t current_time = hal.get_time_ms();
-
-  if (decoder_last_receive_ms <= current_time) {
-    if (!decoder_last_received && decoder_state != SOF && decoder_pos != 0
-        && (decoder_last_receive_ms - current_time > DECODER_TIMEOUT_MS)) {
-      decoder_pos = 0;
-      packet_length = 0;
-      decoder_state = SOF;
-      hal.do_error("RX timeout");
-    }
-  } else {
-    // timer overflowed, do nothing
-  }
-  decoder_last_receive_ms = current_time;
-
-  decoder_last_received = false;
   while (hal.rx_available()) {
-    decoder_last_received = true;
-
     uint8_t rx_byte = hal.receive_byte();
 
     if (decoder_state == SOF) {

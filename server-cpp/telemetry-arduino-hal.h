@@ -2,15 +2,14 @@
  * HAL header for Arduino platforms. DO NOT INCLUDE THIS FILE DIRECTLY.
  * Use the automatic platform detection in telemetry.h instead.
  */
-
-#include <Stream.h>
-
-#include "telemetry-hal.h"
-
 #ifndef _TELEMETRY_ARDUINO_HAL_
 #define _TELEMETRY_ARDUINO_HAL_
 #define TELEMETRY_HAL
 #define TELEMETRY_HAL_ARDUINO
+
+#include <Stream.h>
+
+#include "telemetry-hal.h"
 
 namespace telemetry {
 

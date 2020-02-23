@@ -19,9 +19,6 @@ public:
 
   // Called on a telemetry error.
   virtual void do_error(const char* message) = 0;
-
-  // Return the current time in milliseconds. May overflow at any time.
-  virtual uint32_t get_time_ms() = 0;
 };
 
 }
