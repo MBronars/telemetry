@@ -9,6 +9,7 @@
 #define TELEMETRY_HAL_SOCKETS
 
 #include "telemetry-hal.h"
+#include "queue.h"
 #include <stdexcept>
 
 #include <stdlib.h>
@@ -23,6 +24,7 @@ namespace telemetry {
 
 const size_t kMaxPendingConnections = 4;
 const size_t kMaxConnections = 4;
+const size_t kRxBufferSize = 64;
 
 class SocketsHal : public HalInterface {
 public:
@@ -66,7 +68,10 @@ public:
     }
   }
 
-  void check_connect() {
+  /**
+   * Checks for new connections, returning true if there was a new connection
+   */
+  bool check_connect() {
     if (listenSocketFd_ == -1) {
       throw std::runtime_error("socket fd not initialized - did you forget to call init()?");
     }
@@ -74,7 +79,7 @@ public:
     int newClientSocketFd = accept(listenSocketFd_, NULL, NULL);
     if (newClientSocketFd == -1) {
       if (errno == EWOULDBLOCK) {
-        // do nothing - no new connection
+        return false;  // do nothing - no new connection
       } else {
         throw std::runtime_error("error accepting connection");
         // TODO perhaps not make this a fatal error, but propagate it some other way
@@ -83,9 +88,18 @@ public:
       if (activeClientSockets_ >= kMaxConnections) {  // no space for new connections
         throw std::runtime_error("new connection while at maximum connections");
       } else {
+        int flags = fcntl(newClientSocketFd, F_GETFL);
+        if (flags == -1) {
+          throw std::runtime_error("couldn't get listening socket flags");
+        }
+        if (fcntl(newClientSocketFd, F_SETFL, flags | O_NONBLOCK) == -1) {
+          throw std::runtime_error("couldn't set listening socket flags");
+        }
+
         clientSocketFd_[activeClientSockets_] = newClientSocketFd;
         activeClientSockets_++;
         printf("New connection accepted");
+        return true;
       }
     }
   }
@@ -106,11 +120,22 @@ public:
     }
   }
 
-  size_t rx_available() {
-    return 0;
+  size_t rx_available() {  // TODO for now we don't allocate a separate buffer per client
+    for (size_t i=0; i<activeClientSockets_ && rxBuffer_.empty(); i++) {
+      uint8_t buf[kRxBufferSize];
+      int recvd = recv(clientSocketFd_[i], buf, sizeof(buf), MSG_NOSIGNAL);
+      if (recvd > 0) {
+        for (size_t j=0; j<(size_t)recvd; j++) {
+          rxBuffer_.enqueue(buf[j]);
+        }
+      }
+    }
+    return !rxBuffer_.empty();  // TODO actual size
   }
   uint8_t receive_byte() {
-    return 0;
+    uint8_t rtn;
+    rxBuffer_.dequeue(&rtn);
+    return rtn;
   }
 
   void do_error(const char* message) {
@@ -126,6 +151,8 @@ protected:
   size_t activeClientSockets_ = 0;
   int clientSocketFd_[kMaxConnections];
   uint32_t timeMs_ = 0;
+
+  Queue<uint8_t, kRxBufferSize> rxBuffer_;
 };
 
 }
