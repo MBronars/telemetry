@@ -21,7 +21,7 @@ namespace internal {
   }
 
   template<> uint8_t buf_read<uint8_t>(ReceivePacketBuffer& buffer) {
-    return buffer.read_float();
+    return buffer.read_uint8();
   }
   template<> uint16_t buf_read<uint16_t>(ReceivePacketBuffer& buffer) {
     return buffer.read_uint16();

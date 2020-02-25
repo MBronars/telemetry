@@ -372,7 +372,6 @@ class DataPacket(TelemetryPacket):
 opcodes_registry[OPCODE_DATA] = DataPacket
 
 
-
 class TelemetryContext(object):
   """Context for telemetry communications, containing the setup information in
   the header.
@@ -387,67 +386,46 @@ class TelemetryContext(object):
       return None
 
 
+from typing import List, Tuple
 
-class TelemetrySerial(object):
-  """Telemetry serial receiver state machine. Separates out telemetry packets
+class TelemetryDeserializer():
+  """Telemetry deserializer state machine: separates out telemetry packets
   from the rest of the stream.
   """
   DecoderState = enum('SOF', 'LENGTH', 'DATA', 'DATA_DESTUFF', 'DATA_DESTUFF_END')
-  PACKET_TIMEOUT_THRESHOLD = 0.1  # seconds
 
-  def __init__(self, serial):
-    self.serial = serial
-
-    self.rx_packets = deque()  # queued decoded packets
+  def __init__(self):
+    self.decoder_state = self.DecoderState.SOF  # expected next byte
+    self.decoder_pos = 0  # position within decoder_State
+    self.packet_length = 0  # expected packet length
 
     self.context = TelemetryContext([])
 
-    # decoder state machine variables
-    self.decoder_state = self.DecoderState.SOF;  # expected next byte
-    self.decoder_pos = 0; # position within decoder_State
-    self.packet_length = 0;  # expected packet length
     self.packet_buffer = deque()
 
-    self.data_buffer = deque()
+  def process_data(self, data: bytes) -> Tuple[List[TelemetryPacket], str]:
+    out_of_band_data = ""
+    decoded_packets: List[TelemetryPacket] = []
 
-    # decoder packet timeout variables
-    self.last_loop_received = False
-    self.last_receive_time = time.time()
+    for data_byte in data:
+      rx_byte = data_byte
 
-  def process_rx(self):
-    if ((not self.last_loop_received)
-        and (time.time() - self.last_receive_time > self.PACKET_TIMEOUT_THRESHOLD)
-        and (self.decoder_state != self.DecoderState.SOF and self.decoder_pos > 0)):
-      self.decoder_state = self.DecoderState.SOF
-      self.decoder_pos = 0
-      self.packet_buffer = deque()
-      print("Packet timed out; dropping")
-
-    self.last_loop_received = False
-
-    while self.serial.inWaiting():
-      self.last_loop_received = True
-      self.last_receive_time = time.time()
-
-      rx_byte = ord(self.serial.read())
-      if self.decoder_state == self.DecoderState.SOF:
-        self.packet_buffer.append(rx_byte)
-
+      if self.decoder_state == self.DecoderState.SOF:  # reading the SOF bytes
+        # TODO this can lose bytes
         if rx_byte == SOF_BYTE[self.decoder_pos]:
           self.decoder_pos += 1
-          if self.decoder_pos == len(SOF_BYTE):
+          if self.decoder_pos == len(SOF_BYTE):  # end of start-of-frame sequence
             self.packet_length = 0
             self.decoder_pos = 0
             self.decoder_state = self.DecoderState.LENGTH
-        else:
-          self.data_buffer.extend(self.packet_buffer)
-          self.packet_buffer = deque()
+        else:  # out-of-band data, eg overlapped serial terminal
+          out_of_band_data += rx_byte
           self.decoder_pos = 0
       elif self.decoder_state == self.DecoderState.LENGTH:
         self.packet_length = self.packet_length << 8 | rx_byte
         self.decoder_pos += 1
         if self.decoder_pos == PACKET_LENGTH_BYTES:
-          self.packet_buffer = deque()
+          assert not self.packet_buffer
           self.decoder_pos = 0
           self.decoder_state = self.DecoderState.DATA
       elif self.decoder_state == self.DecoderState.DATA:
@@ -460,7 +438,7 @@ class TelemetrySerial(object):
             if isinstance(decoded, HeaderPacket):
               self.context = TelemetryContext(decoded.get_data_defs())
 
-            self.rx_packets.append(decoded)
+            decoded_packets.append(decoded)
           except TelemetryDeserializationError as e:
             print("Deserialization error: %s" % repr(e)) # TODO prettier cleaner
           except IndexError as e:
@@ -480,6 +458,28 @@ class TelemetrySerial(object):
         self.decoder_state = self.DecoderState.SOF
       else:
         raise RuntimeError("Unknown DecoderState")
+
+    return (decoded_packets, out_of_band_data)
+
+
+class TelemetrySerial(object):
+  def __init__(self, serial):
+    self.serial = serial
+
+    self.rx_packets = deque()  # queued decoded packets
+    self.data_buffer = deque()
+
+    # decoder state machine variables
+    self.decoder = TelemetryDeserializer()
+
+  def process_rx(self):
+    while self.serial.inWaiting():
+      rx_byte = self.serial.read()
+      (packets, data_bytes) = self.decoder.process_data(rx_byte)
+      for packet in packets:
+        self.rx_packets.append(packet)
+      for data_byte in data_bytes:
+        self.data_buffer.append(data_byte)
 
   def transmit_set_packet(self, data_def, value):
     packet = bytearray()
@@ -502,6 +502,68 @@ class TelemetrySerial(object):
         modified_packet.append(0x00)
 
     self.serial.write(header + modified_packet)
+
+    # TODO: add CRC support
+
+  def next_rx_packet(self):
+    if self.rx_packets:
+      return self.rx_packets.popleft()
+    else:
+      return None
+
+  def next_rx_byte(self):
+    if self.data_buffer:
+      return self.data_buffer.popleft()
+    else:
+      return None
+
+
+import socket
+import errno
+class TelemetrySocket(object):
+  def __init__(self, hostname: str, port: int):
+    self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    self.socket.connect((hostname, port))
+    self.socket.setblocking(False)
+
+    self.rx_packets = deque()  # queued decoded packets
+    self.data_buffer = deque()
+
+    # decoder state machine variables
+    self.decoder = TelemetryDeserializer()
+
+  def process_rx(self):
+    try:
+      msg = self.socket.recv(4096)
+      (packets, data_bytes) = self.decoder.process_data(msg)
+      for packet in packets:
+        self.rx_packets.append(packet)
+      for data_byte in data_bytes:
+        self.data_buffer.append(data_byte)
+    except BlockingIOError:
+      pass  # nonblocking, ignore timeouts
+
+  def transmit_set_packet(self, data_def, value):
+    packet = bytearray()
+    packet += serialize_uint8(OPCODE_DATA)
+    packet += serialize_uint8(data_def.data_id)
+    packet += data_def.serialize_data(value)
+    packet += serialize_uint8(DATAID_TERMINATOR)
+    self.transmit_packet(packet)
+
+  def transmit_packet(self, packet):
+    header = bytearray()
+    for elt in SOF_BYTE:
+      header += serialize_uint8(elt)
+    header += serialize_uint16(len(packet))
+
+    modified_packet = bytearray()
+    for packet_byte in packet:
+      modified_packet.append(packet_byte)
+      if packet_byte == SOF_BYTE[0]:
+        modified_packet.append(0x00)
+
+    self.socket.send(header + modified_packet)
 
     # TODO: add CRC support
 

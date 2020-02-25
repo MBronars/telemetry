@@ -19,7 +19,7 @@ import matplotlib.animation as animation
 import numpy as np
 import serial
 
-from telemetry.parser import TelemetrySerial, DataPacket, HeaderPacket, NumericData, NumericArray
+from telemetry.parser import TelemetrySerial, TelemetrySocket, DataPacket, HeaderPacket, NumericData, NumericArray
 
 class BasePlot(object):
   """Base class / interface definition for telemetry plotter plots with a
@@ -257,19 +257,33 @@ class CsvLogger(object):
 if __name__ == "__main__":
   import argparse
   parser = argparse.ArgumentParser(description='Telemetry data plotter.')
-  parser.add_argument('port', help='serial port to receive on')
-  parser.add_argument('--baud', '-b', type=int, default=38400,
+
+  parser.add_argument('--hostname', metavar='h', help='network hostname')
+  parser.add_argument('--port', metavar='p', help='network port', default=1234)
+
+  parser.add_argument('--serial', metavar='s', help='serial port to receive on')
+  parser.add_argument('--baud', metavar='b', type=int, default=38400,
                       help='serial baud rate')
+
   parser.add_argument('--indep_name', '-i', default='time',
                       help='internal name of independent axis')
   parser.add_argument('--span', '-s', type=int, default=10000,
                       help='independent variable axis span')
   parser.add_argument('--log_filename_prefix', '-f', default='telemetry',
                       help='filename prefix for logging output, set to empty to disable logging')
+
   args = parser.parse_args()
 
 
-  telemetry = TelemetrySerial(serial.Serial(args.port, args.baud))
+  telemetry = None
+  if args.serial is not None:
+    assert telemetry is None, "multiple comms methods defined in arguments"
+    telemetry = TelemetrySerial(serial.Serial(args.serial, baudrate=args.baud))
+    print(f"Opened serial port on {args.serial}: {args.baud}")
+  if args.hostname is not None:
+    assert telemetry is None, "multiple comms methods defined in arguments"
+    telemetry = TelemetrySocket(args.hostname, args.port)
+    print(f"Opened network socket on {args.hostname}: {args.port}")
 
   fig = plt.figure()
 
@@ -288,6 +302,7 @@ if __name__ == "__main__":
       packet = telemetry.next_rx_packet()
       if not packet:
         break
+      print(packet)
 
       if isinstance(packet, HeaderPacket):
         fig.clf()
@@ -391,10 +406,10 @@ if __name__ == "__main__":
   ani = animation.FuncAnimation(fig, update, interval=30)
   plt.ion()
   plt.draw()
+  plt.show()
 
   while True:
     user_in = input("Serial command to send: ").encode()
     # TODO: proper sync semantics
     telemetry.serial.write(user_in)
     telemetry.serial.write('\n'.encode())
-
