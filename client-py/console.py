@@ -43,6 +43,6 @@ if __name__ == "__main__":
       if next_byte is None:
         break
       try:
-        print(chr(next_byte), end='')
+        print(next_byte, end='')
       except UnicodeEncodeError:
         pass

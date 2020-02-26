@@ -346,7 +346,7 @@ if __name__ == "__main__":
       if next_byte is None:
         break
       try:
-        print(chr(next_byte), end='')
+        print(next_byte, end='')
         if csv_logger[0]:
           csv_logger[0].add_char(chr(next_byte))
       except UnicodeEncodeError:
