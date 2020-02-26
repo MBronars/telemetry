@@ -555,15 +555,17 @@ class TelemetrySocket(object):
     self.decoder = TelemetryDeserializer()
 
   def process_rx(self):
+    msg = bytearray()
     try:
-      msg = self.socket.recv(4096)
-      (packets, data_bytes) = self.decoder.process_data(msg)
-      for packet in packets:
-        self.rx_packets.append(packet)
-      for data_byte in data_bytes:
-        self.data_buffer.append(data_byte)
+      while True:
+        msg += self.socket.recv(4096)
     except BlockingIOError:
       pass  # nonblocking, ignore timeouts
+    (packets, data_bytes) = self.decoder.process_data(msg)
+    for packet in packets:
+      self.rx_packets.append(packet)
+    for data_byte in data_bytes:
+      self.data_buffer.append(data_byte)
 
   def transmit_set_packet(self, data_def, value):
     packet = bytearray()

@@ -302,7 +302,6 @@ if __name__ == "__main__":
       packet = telemetry.next_rx_packet()
       if not packet:
         break
-      print(packet)
 
       if isinstance(packet, HeaderPacket):
         fig.clf()
