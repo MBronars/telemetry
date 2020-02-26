@@ -302,7 +302,6 @@ if __name__ == "__main__":
       packet = telemetry.next_rx_packet()
       if not packet:
         break
-      print(packet)
 
       if isinstance(packet, HeaderPacket):
         fig.clf()
@@ -346,7 +345,7 @@ if __name__ == "__main__":
       if next_byte is None:
         break
       try:
-        print(chr(next_byte), end='')
+        print(next_byte, end='')
         if csv_logger[0]:
           csv_logger[0].add_char(chr(next_byte))
       except UnicodeEncodeError:

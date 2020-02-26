@@ -30,31 +30,41 @@ RECORDID_TERMINATOR = 0x00
 
 # Deserialization functions that (destructively) reads data from the input "stream".
 def deserialize_uint8(byte_stream):
-# TODO: handle overflow
-  return byte_stream.popleft()
+  # TODO: handle overflow
+  res = byte_stream[0]
+  del byte_stream[0]
+  return res
 
 def deserialize_bool(byte_stream):
-# TODO: handle overflow
-  return not(byte_stream.popleft() == 0)
+  # TODO: handle overflow
+  res = not(byte_stream[0] == 0)
+  del byte_stream[0]
+  return res
 
 def deserialize_uint16(byte_stream):
   # TODO: handle overflow
-  return byte_stream.popleft() << 8 | byte_stream.popleft()
+  res = byte_stream[0] << 8 | byte_stream[1]
+  del byte_stream[0:2]
+  return res
 
 def deserialize_uint32(byte_stream):
   # TODO: handle overflow
-  return (byte_stream.popleft() << 24
-         | byte_stream.popleft() << 16
-         | byte_stream.popleft() << 8
-         | byte_stream.popleft())
+  res = (byte_stream[0] << 24
+        | byte_stream[1] << 16
+        | byte_stream[2] << 8
+        | byte_stream[3])
+  del byte_stream[0:4]
+  return res
 
 def deserialize_float(byte_stream):
   # TODO: handle overflow
-  packed = bytearray([byte_stream.popleft(),
-                      byte_stream.popleft(),
-                      byte_stream.popleft(),
-                      byte_stream.popleft()])
-  return struct.unpack('!f', packed)[0]
+  packed = bytearray([byte_stream[0],
+                      byte_stream[1],
+                      byte_stream[2],
+                      byte_stream[3]])
+  res = struct.unpack('!f', packed)[0]
+  del byte_stream[0:4]
+  return res
 
 def deserialize_numeric(byte_stream, subtype, length):
   if subtype == NUMERIC_SUBTYPE_UINT:
@@ -92,10 +102,11 @@ def deserialize_numeric_from_def(data_def, count=None):
 def deserialize_string(byte_stream):
   # TODO: handle overflow
   outstr = ""
-  data = byte_stream.popleft()
-  while data:
-    outstr += chr(data)
-    data = byte_stream.popleft()
+  i = 0
+  while byte_stream[i]:
+    outstr += chr(byte_stream[i])
+    i += 1
+  del byte_stream[:i+1]  # also eat the terminator
   return outstr
 
 
@@ -180,7 +191,7 @@ class TelemetryData(object):
     """
     opcode = byte_stream[0]
     if opcode not in datatype_registry:
-      raise NoOpcodeError("No datatype %02x" % opcode)
+      raise NoOpcodeError(f"No datatype {opcode} in {datatype_registry}")
     data_cls = datatype_registry[opcode]
     return data_cls(data_id, byte_stream)
 
@@ -395,69 +406,80 @@ class TelemetryDeserializer():
   DecoderState = enum('SOF', 'LENGTH', 'DATA', 'DATA_DESTUFF', 'DATA_DESTUFF_END')
 
   def __init__(self):
-    self.decoder_state = self.DecoderState.SOF  # expected next byte
-    self.decoder_pos = 0  # position within decoder_State
-    self.packet_length = 0  # expected packet length
+    self.in_packet = False
+    self.packet_length = 0
+    self.last_destuff_idx = 0
 
     self.context = TelemetryContext([])
 
-    self.packet_buffer = deque()
+    self.buffer: bytearray = bytearray()
 
   def process_data(self, data: bytes) -> Tuple[List[TelemetryPacket], str]:
     out_of_band_data = ""
     decoded_packets: List[TelemetryPacket] = []
 
-    for data_byte in data:
-      rx_byte = data_byte
+    self.buffer += data
 
-      if self.decoder_state == self.DecoderState.SOF:  # reading the SOF bytes
-        # TODO this can lose bytes
-        if rx_byte == SOF_BYTE[self.decoder_pos]:
-          self.decoder_pos += 1
-          if self.decoder_pos == len(SOF_BYTE):  # end of start-of-frame sequence
-            self.packet_length = 0
-            self.decoder_pos = 0
-            self.decoder_state = self.DecoderState.LENGTH
-        else:  # out-of-band data, eg overlapped serial terminal
-          out_of_band_data += rx_byte
-          self.decoder_pos = 0
-      elif self.decoder_state == self.DecoderState.LENGTH:
-        self.packet_length = self.packet_length << 8 | rx_byte
-        self.decoder_pos += 1
-        if self.decoder_pos == PACKET_LENGTH_BYTES:
-          assert not self.packet_buffer
-          self.decoder_pos = 0
-          self.decoder_state = self.DecoderState.DATA
-      elif self.decoder_state == self.DecoderState.DATA:
-        self.packet_buffer.append(rx_byte)
-        self.decoder_pos += 1
-        if self.decoder_pos == self.packet_length:
-          try:
-            decoded = TelemetryPacket.decode(self.packet_buffer, self.context)
-
-            if isinstance(decoded, HeaderPacket):
-              self.context = TelemetryContext(decoded.get_data_defs())
-
-            decoded_packets.append(decoded)
-          except TelemetryDeserializationError as e:
-            print("Deserialization error: %s" % repr(e)) # TODO prettier cleaner
-          except IndexError as e:
-            print("Index error: %s" % repr(e))
-          self.packet_buffer = deque()
-
-          self.decoder_pos = 0
-          if rx_byte == SOF_BYTE[0]:
-            self.decoder_state = self.DecoderState.DATA_DESTUFF_END
+    while self.buffer:
+      next_sof = self.buffer.find(b'\x05\x39')  # TODO integrate w/ SOF_BYTE
+      # print(f"{self.in_packet} {next_sof} > {self.buffer}")
+      if next_sof == 0:
+        del self.buffer[:2]
+        self.in_packet = True
+        self.packet_length = 0
+        self.last_destuff_idx = 0
+      elif not self.in_packet:
+        if next_sof != -1:
+          out_of_band_data += self.buffer[:next_sof].decode('utf-8')
+          self.buffer = self.buffer[next_sof:]
+        else:
+          if self.buffer[-1] == SOF_BYTE[0]:
+            out_of_band_data += self.buffer[:-1].decode('utf-8')
+            del self.buffer[:-1]
+            break
           else:
-            self.decoder_state = self.DecoderState.SOF
-        elif rx_byte == SOF_BYTE[0]:
-          self.decoder_state = self.DecoderState.DATA_DESTUFF
-      elif self.decoder_state == self.DecoderState.DATA_DESTUFF:
-        self.decoder_state = self.DecoderState.DATA
-      elif self.decoder_state == self.DecoderState.DATA_DESTUFF_END:
-        self.decoder_state = self.DecoderState.SOF
-      else:
-        raise RuntimeError("Unknown DecoderState")
+            out_of_band_data += self.buffer.decode('utf-8')
+            self.buffer = bytearray()
+      else:  # in packet, starting at length
+        if self.packet_length == 0:
+          if next_sof != -1 and next_sof < 2:
+            print(f"discarding short packet {self.buffer[:next_sof]}")
+            del self.buffer[:next_sof]
+            self.in_packet = False
+          elif len(self.buffer) < 2:
+            break
+          else:
+            self.packet_length = self.buffer[0] << 8 | self.buffer[1]
+            del self.buffer[:2]
+
+        # destuff all bytes
+        stuff_index = self.buffer.find(SOF_BYTE[0], self.last_destuff_idx)
+        while stuff_index < len(self.buffer) - 1 and stuff_index < self.packet_length and stuff_index != -1 and \
+            (stuff_index < next_sof or next_sof == -1):
+          del self.buffer[stuff_index+1]
+          self.last_destuff_idx = stuff_index + 1
+          stuff_index = self.buffer.find(SOF_BYTE[0], self.last_destuff_idx)
+
+        if len(self.buffer) < self.packet_length or \
+            (self.buffer[-1] == SOF_BYTE[0] and self.last_destuff_idx < self.packet_length):
+          break
+        if next_sof != -1 and next_sof < self.packet_length:
+          print(f"discarding short packet {self.buffer[:next_sof]}, sof at {next_sof} but expected len {self.packet_length}")
+
+        packet_bytearray = self.buffer[:self.packet_length].copy()
+        decoded = TelemetryPacket.decode(packet_bytearray, self.context)
+
+        try:
+
+          if isinstance(decoded, HeaderPacket):
+            self.context = TelemetryContext(decoded.get_data_defs())
+          decoded_packets.append(decoded)
+        except TelemetryDeserializationError as e:
+          print("Deserialization error: %s" % repr(e)) # TODO prettier cleaner
+        except IndexError as e:
+          print("Index error: %s" % repr(e))
+        del self.buffer[:self.packet_length]
+        self.in_packet = False
 
     return (decoded_packets, out_of_band_data)
 
@@ -533,15 +555,17 @@ class TelemetrySocket(object):
     self.decoder = TelemetryDeserializer()
 
   def process_rx(self):
+    msg = bytearray()
     try:
-      msg = self.socket.recv(4096)
-      (packets, data_bytes) = self.decoder.process_data(msg)
-      for packet in packets:
-        self.rx_packets.append(packet)
-      for data_byte in data_bytes:
-        self.data_buffer.append(data_byte)
+      while True:
+        msg += self.socket.recv(4096)
     except BlockingIOError:
       pass  # nonblocking, ignore timeouts
+    (packets, data_bytes) = self.decoder.process_data(msg)
+    for packet in packets:
+      self.rx_packets.append(packet)
+    for data_byte in data_bytes:
+      self.data_buffer.append(data_byte)
 
   def transmit_set_packet(self, data_def, value):
     packet = bytearray()
