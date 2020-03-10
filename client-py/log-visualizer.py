@@ -1,7 +1,9 @@
 from abc import abstractmethod
-from typing import *
+from typing import List, Any, Dict, Tuple, FrozenSet  # need to not alias OrderedDict
+from collections import OrderedDict
 
 import csv
+import numpy as np  # type: ignore
 from matplotlib import pyplot as plt  # type: ignore
 
 
@@ -25,7 +27,7 @@ class LinePlot(BasePlot):
     self.y_values.append(float(data))
 
   def render(self, subplot: Any) -> None:
-    pass
+    subplot.plot(self.x_values, self.y_values)
 
 
 class WaterfallPlot(BasePlot):
@@ -34,11 +36,41 @@ class WaterfallPlot(BasePlot):
     self.y_values: List[List[float]] = []
 
   def add_cell(self, indep_val: float, data: str) -> None:
+    arr_data = [float(arr_elt) for arr_elt in data[1:-1].split(',')]
+    if self.y_values:
+      assert len(arr_data) == len(self.y_values[0])
+
     self.x_values.append(indep_val)
-    self.y_values.append([float(arr_elt) for arr_elt in data[1:-1].split(',')])
+    self.y_values.append(arr_data)
 
   def render(self, subplot: Any) -> None:
-    pass
+    # print(f"X {len(self.x_mesh[0])}, Y {len(self.y_mesh[0])}, D {len(self.y_values[0])}")
+    # print(f"X {len(self.x_mesh[-1])}, Y {len(self.y_mesh[-1])}, D {len(self.y_values[-1])}")
+    # print(f"X {len(self.x_mesh)}, Y {len(self.y_mesh)}, D {len(self.y_values)}")
+
+    # note, mesh is the fencepost surrounding the data - so these must be 1 larger in both dimensions than the values
+    arr_len = len(self.y_values[0])
+    val_len = len(self.y_values)
+    x_mesh: List[List[float]] = []
+    y_mesh: List[List[float]] = [[i - 0.5 for i in range(arr_len + 1)]] * (val_len + 1)
+
+    # generate the x_mesh from x_values
+    if val_len == 0:
+      return
+    elif val_len == 1:  # fencepost with arbitrary size of unit 1
+      x_point = self.x_values[0]
+      x_mesh.append([x_point - 0.5] * (arr_len + 1))
+      x_mesh.append([x_point + 0.5] * (arr_len + 1))
+    else:
+      lower_x_size = self.x_values[1] - self.x_values[0]
+      x_mesh.append([self.x_values[0] - lower_x_size / 2] * (arr_len + 1))
+      for i in range(val_len - 1):
+        x_mesh.append([(self.x_values[i+1] + self.x_values[i]) / 2] * (arr_len + 1))
+      upper_x_size = self.x_values[-1] - self.x_values[-2]
+      x_mesh.append([self.x_values[-1] + upper_x_size / 2] * (arr_len + 1))
+
+    subplot.pcolorfast(np.array(x_mesh), np.array(y_mesh), np.array(self.y_values),
+                       cmap='gray', interpolation='None')
 
 
 def str_is_float(input: str) -> bool:
@@ -52,6 +84,7 @@ def str_is_float(input: str) -> bool:
 
 
 def str_is_array(input: str) -> bool:
+  input_simple = input.strip()
   return len(input) > 1 and input[0] == '[' and input[-1] == ']'
 
 
@@ -71,12 +104,14 @@ if __name__ == '__main__':
   #
   # Parse the input CSV
   #
+  first_x = 0.0
+  last_x = 0.0
   with open(args.filename, newline='') as csvfile:
     reader = csv.reader(csvfile)
     names = next(reader)
 
     try:
-      for _ in range(args.skip_data_rows):  # skip skipped rows
+      for i in range(args.skip_data_rows):  # skip skipped rows
         next(reader)
 
       data_row = next(reader)  # infer data type from first row
@@ -93,9 +128,11 @@ if __name__ == '__main__':
         plots.append(plot)
 
       data_row_idx = 0
+      first_x = float(data_row[0])
       print(f"working: parsed {data_row_idx} rows", end='\r')
       while True:
         indep_value = float(data_row[0])
+        last_x = indep_value
         for data_col_idx, data_cell in enumerate(data_row[1:]):  # discard first col
           if data_cell:
             plots[data_col_idx].add_cell(indep_value, data_cell)
@@ -118,10 +155,29 @@ if __name__ == '__main__':
     for merge_item in merge_set:
       merge_dict[merge_item] = merge_set
 
+  merged_plots: 'OrderedDict[FrozenSet[str], List[Tuple[str, BasePlot]]]' = OrderedDict()
+  for col_name, plot in zip(names[1:], plots):
+    simple_col_name = col_name.split(' ')[0]
+    if col_name in merge_dict:
+      key = merge_dict[col_name]
+    elif simple_col_name in merge_dict:  # allow taking the short name
+      key = merge_dict[simple_col_name]
+    else:
+      key = frozenset([col_name])  # non-merged, use name as key
+
+    merged_plots.setdefault(key, []).append((col_name, plot))
   #
   # Render graphs
   #
+  print(f"working: rendering", end='\r')
+  figure = plt.figure()
+  for plot_idx, (key, name_plots) in enumerate(merged_plots.items()):
+    ax = figure.add_subplot(len(merged_plots), 1, plot_idx + 1)
+    ax.set_xlim([first_x, last_x])
+    ax.set_title(", ".join([name for (name, plot) in name_plots]))
+    for name, plot in name_plots:
+      print(f"working: rendering {name}{' '*(30 - len(name))}", end='\r')  # TODO arbitrary 30-char name "limit"
+      plot.render(ax)
+  print(f"finished: rendered {len(merged_plots)} plots{' '*30}")
 
   plt.show()
-
-
