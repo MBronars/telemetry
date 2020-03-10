@@ -44,10 +44,6 @@ class WaterfallPlot(BasePlot):
     self.y_values.append(arr_data)
 
   def render(self, subplot: Any) -> None:
-    # print(f"X {len(self.x_mesh[0])}, Y {len(self.y_mesh[0])}, D {len(self.y_values[0])}")
-    # print(f"X {len(self.x_mesh[-1])}, Y {len(self.y_mesh[-1])}, D {len(self.y_values[-1])}")
-    # print(f"X {len(self.x_mesh)}, Y {len(self.y_mesh)}, D {len(self.y_values)}")
-
     # note, mesh is the fencepost surrounding the data - so these must be 1 larger in both dimensions than the values
     arr_len = len(self.y_values[0])
     val_len = len(self.y_values)
@@ -84,7 +80,6 @@ def str_is_float(input: str) -> bool:
 
 
 def str_is_array(input: str) -> bool:
-  input_simple = input.strip()
   return len(input) > 1 and input[0] == '[' and input[-1] == ']'
 
 
