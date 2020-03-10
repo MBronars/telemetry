@@ -166,6 +166,7 @@ if __name__ == '__main__':
   #
   print(f"working: rendering", end='\r')
   figure = plt.figure()
+  figure.subplots(len(merged_plots), 1, sharex='all')
   for plot_idx, (key, name_plots) in enumerate(merged_plots.items()):
     ax = figure.add_subplot(len(merged_plots), 1, plot_idx + 1)
     ax.set_xlim([first_x, last_x])
