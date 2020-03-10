@@ -4,7 +4,7 @@ from collections import OrderedDict
 
 import csv
 import numpy as np  # type: ignore
-from matplotlib import pyplot as plt  # type: ignore
+import matplotlib.pyplot as plt  # type: ignore
 
 
 class BasePlot:
@@ -165,17 +165,27 @@ if __name__ == '__main__':
   # Render graphs
   #
   print(f"working: rendering", end='\r')
-  figure, axs = plt.subplots(len(merged_plots), 1, sharex='all')
+
+  figure, axs = plt.subplots(len(merged_plots), 1, sharex='all', frameon=False)
+  if len(merged_plots) == 1:  # unify special case of single Axes to list
+    axs = [axs]
+
+  figure.tight_layout()
+  figure.subplots_adjust(wspace=0, hspace=0)
+  for ax in axs:
+    ax.tick_params(axis='y', direction='in', pad=-25)
+    ax.tick_params(axis='x', direction='in', pad=-15)
+
   for plot_idx, (key, name_plots) in enumerate(merged_plots.items()):
-    if len(merged_plots) > 1:
-      ax = axs[plot_idx]
-    else:
-      ax = axs
+    ax = axs[plot_idx]
     ax.set_xlim([first_x, last_x])
-    ax.set_title(", ".join([name for (name, plot) in name_plots]))
+    ax.text(0.5, 1.0, ", ".join([name for (name, plot) in name_plots]),
+            horizontalalignment='center', verticalalignment='top', transform=ax.transAxes)
     for name, plot in name_plots:
       print(f"working: rendering {name}{' '*(30 - len(name))}", end='\r')  # TODO arbitrary 30-char name "limit"
       plot.render(ax)
+
   print(f"finished: rendered {len(merged_plots)} plots{' '*30}")
 
+  plt.subplots_adjust(bottom=0.001, left=0.001, top=0.999, right=0.999)  # remove extraneous whitespace around plot
   plt.show()
