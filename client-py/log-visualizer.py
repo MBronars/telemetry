@@ -161,11 +161,11 @@ if __name__ == '__main__':
       key = frozenset([col_name])  # non-merged, use name as key
 
     merged_plots.setdefault(key, []).append((col_name, plot))
+
   #
   # Render graphs
   #
   print(f"working: rendering", end='\r')
-
   figure, axs = plt.subplots(len(merged_plots), 1, sharex='all', frameon=False)
   if len(merged_plots) == 1:  # unify special case of single Axes to list
     axs = [axs]
