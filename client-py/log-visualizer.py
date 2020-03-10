@@ -165,10 +165,12 @@ if __name__ == '__main__':
   # Render graphs
   #
   print(f"working: rendering", end='\r')
-  figure = plt.figure()
-  figure.subplots(len(merged_plots), 1, sharex='all')
+  figure, axs = plt.subplots(len(merged_plots), 1, sharex='all')
   for plot_idx, (key, name_plots) in enumerate(merged_plots.items()):
-    ax = figure.add_subplot(len(merged_plots), 1, plot_idx + 1)
+    if len(merged_plots) > 1:
+      ax = axs[plot_idx]
+    else:
+      ax = axs
     ax.set_xlim([first_x, last_x])
     ax.set_title(", ".join([name for (name, plot) in name_plots]))
     for name, plot in name_plots:
